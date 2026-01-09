@@ -1,0 +1,84 @@
+{
+  "players": [
+    "blue",
+    "red"
+  ],
+  "final_score": {
+    "blue": 0,
+    "red": 1,
+    "draws": 2,
+    "nulls": 0
+  },
+  "num_rounds": 3,
+  "rounds": [
+    {
+      "round": 1,
+      "choices": {
+        "blue": "ROCK",
+        "red": "ROCK"
+      },
+      "outcome": {
+        "blue": "draw",
+        "red": "draw"
+      },
+      "score_after_round": {
+        "blue": 0,
+        "red": 0,
+        "draws": 1,
+        "nulls": 0
+      },
+      "files": {
+        "frame_detection": "round_001/frame_detection.png",
+        "mask_all": "round_001/mask_all.png",
+        "mask_red": "round_001/mask_red.png",
+        "mask_blue": "round_001/mask_blue.png"
+      }
+    },
+    {
+      "round": 2,
+      "choices": {
+        "blue": "PAPER",
+        "red": "PAPER"
+      },
+      "outcome": {
+        "blue": "draw",
+        "red": "draw"
+      },
+      "score_after_round": {
+        "blue": 0,
+        "red": 0,
+        "draws": 2,
+        "nulls": 0
+      },
+      "files": {
+        "frame_detection": "round_002/frame_detection.png",
+        "mask_all": "round_002/mask_all.png",
+        "mask_red": "round_002/mask_red.png",
+        "mask_blue": "round_002/mask_blue.png"
+      }
+    },
+    {
+      "round": 3,
+      "choices": {
+        "blue": "PAPER",
+        "red": "SCISSORS"
+      },
+      "outcome": {
+        "blue": "loser",
+        "red": "winner"
+      },
+      "score_after_round": {
+        "blue": 0,
+        "red": 1,
+        "draws": 2,
+        "nulls": 0
+      },
+      "files": {
+        "frame_detection": "round_003/frame_detection.png",
+        "mask_all": "round_003/mask_all.png",
+        "mask_red": "round_003/mask_red.png",
+        "mask_blue": "round_003/mask_blue.png"
+      }
+    }
+  ]
+}

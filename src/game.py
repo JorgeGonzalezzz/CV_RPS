@@ -1,3 +1,4 @@
+# src/game.py
 import time
 import cv2
 import os
@@ -5,7 +6,7 @@ from datetime import datetime
 
 from src.voice import Voice
 from src.game_info import GameInformation
-from src.dashboard import ResultsDashboard
+from src.password_lock import PasswordLock, PasswordConfig
 
 
 class Game:
@@ -24,6 +25,7 @@ class Game:
         enable_voice: bool = True,
         save_results: bool = True,
         results_root: str = "results",
+        password_enabled: bool = True,
     ):
         self.config = config
         self.colors = list(config.get("colors", {}).keys())
@@ -62,12 +64,28 @@ class Game:
         self.save_results = save_results
         self.results_root = results_root
 
+        # PASSWORD CONFIG 
+        self.password_enabled = password_enabled
+        self.password_cfg = PasswordConfig(
+            steps=[
+                ("ROCK", "SCISSORS"),
+                ("SCISSORS", "ROCK"),
+                ("PAPER", "PAPER"),
+                ("SCISSORS", "SCISSORS"),
+            ],
+            confirm_pair=("ROCK", "ROCK"),     # arm/confirm
+            stable_required_frames=14,         # stabilization frames
+            settle_frames_after_step=12,       # wait frames between steps
+            timeout_s=12.0,                    # per phase
+        )
+        self.password = PasswordLock(self.info.players, self.password_cfg)
+
     # ----------------------------
     # HUD helpers
     # ----------------------------
     def _put_text_centered(self, frame, text, y, scale=0.75, thickness=2):
         H, W = frame.shape[:2]
-        (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
+        (tw, _), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
         x = max(0, (W - tw) // 2)
         cv2.putText(
             frame, text, (x, y),
@@ -91,6 +109,13 @@ class Game:
     def run(self):
         print("Game started. Keys: [q]=quit | [m]=toggle masks")
         try:
+            # PASSWORD FIRST
+            if self.password_enabled:
+                ok = self._unlock_password()
+                if not ok:
+                    return
+
+            # GAME LOOP
             while True:
                 result = self.round()
                 if result is None:
@@ -99,6 +124,7 @@ class Game:
                 p1, p2 = self.info.players
                 print(f"ROUND RESULT -> {p1.upper()}: {result.get(p1)} | {p2.upper()}: {result.get(p2)}")
                 print(f"SCORE -> {self.info.score}")
+
         finally:
             self._release()
 
@@ -111,6 +137,52 @@ class Game:
             return None
 
         return self._wait_stable_gestures(timeout_s=self.post_shoot_timeout_s)
+
+    # ----------------------------
+    # PASSWORD PHASE
+    # ----------------------------
+    def _unlock_password(self) -> bool:
+        """
+        Runs the password sequence before starting the game.
+        Returns False if user quits (q) / camera fails.
+        """
+        self.password.reset()
+        self.voice.say("Show rock rock to confirm password")
+
+        while True:
+            frame, results, key = self._read_and_render(overlay_text=self.password.status_text())
+            if frame is None or results is None:
+                return False
+            if key == ord("q"):
+                return False
+
+            ok = self.password.update(results)
+
+            if self.password.last_event == "armed":
+                self.voice.say("Password armed")
+            elif self.password.last_event == "selected":
+                self.voice.say("Selected")
+            elif self.password.last_event == "confirmed":
+                self.voice.say("Confirmed")
+            elif self.password.last_event == "wrong":
+                self.voice.say("PASSWORD WRONG")
+
+                t0 = time.time()
+                while time.time() - t0 < 0.9:
+                    if self._ui_tick(overlay_text=self.password.status_text()) is False:
+                        return False
+                    
+            elif self.password.last_event == "unlocked":
+                self.voice.say("Password accepted")
+
+
+            if ok:
+                self.voice.say("Password accepted")
+                t0 = time.time()
+                while time.time() - t0 < 0.7:
+                    if self._ui_tick(overlay_text="PASSWORD OK") is False:
+                        return False
+                return True
 
     # ----------------------------
     # Internal: read + render
@@ -131,14 +203,17 @@ class Game:
 
         frame = self.viz.draw(frame, results)
 
+        # Status line (top-left)
         if overlay_text:
             cv2.putText(
                 frame, overlay_text, (20, self._hud_status_y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2
             )
 
+        # Scoreboard (top centered)
         self._draw_scoreboard(frame, y=self._hud_score_y)
 
+        # FPS bottom-left
         cv2.putText(
             frame, f"FPS: {self._fps:.1f}", (20, frame.shape[0] - 20),
             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2
@@ -146,6 +221,7 @@ class Game:
 
         cv2.imshow("Game", frame)
 
+        # Mask windows (optional)
         if self._show_masks and "_masks" in results:
             for cname, m in results["_masks"].items():
                 cv2.imshow(f"mask_{cname}", m)
@@ -154,7 +230,9 @@ class Game:
         if key == ord("m"):
             self._toggle_masks(results)
 
+        # keep voice alive
         self.voice.tick()
+
         return frame, results, key
 
     def _ui_tick(self, overlay_text=None):
@@ -273,6 +351,7 @@ class Game:
             d1, g1 = info1.get("detected", False), info1.get("gesture")
             d2, g2 = info2.get("detected", False), info2.get("gesture")
 
+            # stability logic
             if d1 and g1 is not None and g1 == last_g1:
                 streak1 += 1
             else:
@@ -314,25 +393,42 @@ class Game:
             self.voice.close()
         except Exception:
             pass
+
         try:
             self.cap.release()
         except Exception:
             pass
+
         cv2.destroyAllWindows()
+
+        out_dir = None
 
         if self.save_results:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             out_dir = os.path.join(self.results_root, ts)
             try:
                 self.info.export(out_dir)
-                print(f"Results saved to: {out_dir}")
-
-                # launch dashboard
-                dashboard = ResultsDashboard(out_dir, port=5000, open_browser=True)
-                dashboard.run(blocking=True)
-
+                print(f" Results saved to: {out_dir}")
             except Exception as e:
-                print(f"Could not save results / open dashboard: {e}")
+                print(f"❌ Could not save results: {e}")
+                out_dir = None
+
+        #  Launch dashboard at the end (if we exported)
+        if out_dir is not None:
+            try:
+                # Import aquí para evitar problemas de rutas / imports circulares
+                from src.dashboard import ResultsDashboard
+
+                dash = ResultsDashboard(
+                    out_dir=out_dir,
+                    host="127.0.0.1",
+                    port=5000,
+                    open_browser=True
+                )
+                print("Opening dashboard...")
+                dash.run(blocking=True)   # deja Flask corriendo hasta Ctrl+C
+            except Exception as e:
+                print(f"Could not open dashboard: {e}")
 
         print("Done")
 
