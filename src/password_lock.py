@@ -15,7 +15,7 @@ class PasswordConfig:
 
     # stabilization
     stable_required_frames: int = 14          # frames needed to accept a selection/confirm
-    settle_frames_after_step: int = 12        # cooldown frames after transitions
+    settle_frames_after_step: int = 30       # cooldown frames after transitions
     timeout_s: float = 12.0                   # (optional, if you want to enforce timeout externally)
 
     # UX

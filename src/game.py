@@ -3,10 +3,20 @@ import time
 import cv2
 import os
 from datetime import datetime
+from typing import Optional, Union
 
 from src.voice import Voice
 from src.game_info import GameInformation
 from src.password_lock import PasswordLock, PasswordConfig
+
+# Dashboard opcional (para que no reviente si el dashboard falla/importa mal)
+try:
+    from src.dashboard import ResultsDashboard
+    _DASH_AVAILABLE = True
+except Exception as e:
+    ResultsDashboard = None
+    _DASH_AVAILABLE = False
+    print("Dashboard not available:", e)
 
 
 class Game:
@@ -15,17 +25,31 @@ class Game:
         config: dict,
         tracker_cls,
         visualizer_cls,
+
+        # Camera
+        camera_source: Optional[Union[int, str]] = None,  # ✅ int (0) o URL
         camera_index: int = 0,
         use_dshow: bool = True,
+
+        # RPS game params
         hide_required_frames: int = 20,
         stable_required_frames: int = 24,
         post_shoot_timeout_s: float = 10.0,
         countdown_step_s: float = 0.55,
         fps_smooth_every: int = 10,
         enable_voice: bool = True,
+
+        # Export
         save_results: bool = True,
         results_root: str = "results",
+
+        # Password
         password_enabled: bool = True,
+
+        # ✅ NEW: Undistort (calibration)
+        calibration_npz: Optional[str] = None,   # e.g. "calibration_phone.npz"
+        undistort_alpha: float = 0.0,            # 0.0 recorta más, 1.0 conserva más FOV
+        undistort_crop: bool = False,            # recomiendo False para no cambiar tamaño
     ):
         self.config = config
         self.colors = list(config.get("colors", {}).keys())
@@ -35,11 +59,50 @@ class Game:
         self.tracker = tracker_cls(config)
         self.viz = visualizer_cls()
 
-        api = cv2.CAP_DSHOW if use_dshow else 0
-        self.cap = cv2.VideoCapture(camera_index, api)
-        if not self.cap.isOpened():
-            raise RuntimeError("Could not access the webcam")
+        # ============================
+        # ✅ VideoCapture: local o URL
+        # ============================
+        if camera_source is None:
+            camera_source = camera_index
 
+        if isinstance(camera_source, int):
+            api = cv2.CAP_DSHOW if use_dshow else 0
+            self.cap = cv2.VideoCapture(camera_source, api)
+        else:
+            # URL (IP cam). CAP_FFMPEG suele ir mejor si está disponible
+            self.cap = cv2.VideoCapture(camera_source, cv2.CAP_FFMPEG)
+            if not self.cap.isOpened():
+                self.cap = cv2.VideoCapture(camera_source)
+
+        if not self.cap.isOpened():
+            raise RuntimeError(f"Could not access the camera/stream: {camera_source}")
+
+        # Opcional: reduce latencia (depende backend)
+        try:
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        except Exception:
+            pass
+
+        self.camera_source = camera_source
+
+        # ============================
+        # ✅ Undistort (optional)
+        # ============================
+        self.undistorter = None
+        if calibration_npz is not None:
+            try:
+                from src.undistort import Undistorter
+                self.undistorter = Undistorter.from_npz(
+                    calibration_npz,
+                    alpha=undistort_alpha,
+                    crop=undistort_crop
+                )
+                print(f"Undistort ENABLED using: {calibration_npz} (alpha={undistort_alpha}, crop={undistort_crop})")
+            except Exception as e:
+                self.undistorter = None
+                print(f"[WARN] Could not load/apply undistort calibration ({calibration_npz}): {e}")
+
+        # Game params
         self.hide_required_frames = hide_required_frames
         self.stable_required_frames = stable_required_frames
         self.post_shoot_timeout_s = post_shoot_timeout_s
@@ -63,20 +126,21 @@ class Game:
         # Export config
         self.save_results = save_results
         self.results_root = results_root
+        self._export_out_dir: Optional[str] = None
 
-        # PASSWORD CONFIG 
+        # PASSWORD CONFIG
         self.password_enabled = password_enabled
         self.password_cfg = PasswordConfig(
             steps=[
                 ("ROCK", "SCISSORS"),
                 ("SCISSORS", "ROCK"),
-                ("PAPER", "PAPER"),
+                ("PAPER", "PAPER"), 
                 ("SCISSORS", "SCISSORS"),
             ],
-            confirm_pair=("ROCK", "ROCK"),     # arm/confirm
-            stable_required_frames=14,         # stabilization frames
-            settle_frames_after_step=12,       # wait frames between steps
-            timeout_s=12.0,                    # per phase
+            confirm_pair=("ROCK", "ROCK"),
+            stable_required_frames=14,
+            settle_frames_after_step=12,
+            timeout_s=12.0,
         )
         self.password = PasswordLock(self.info.players, self.password_cfg)
 
@@ -87,10 +151,7 @@ class Game:
         H, W = frame.shape[:2]
         (tw, _), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, thickness)
         x = max(0, (W - tw) // 2)
-        cv2.putText(
-            frame, text, (x, y),
-            cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), thickness
-        )
+        cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, scale, (255, 255, 255), thickness)
 
     def _draw_scoreboard(self, frame, y):
         p1, p2 = self.info.players
@@ -105,6 +166,8 @@ class Game:
 
     # ----------------------------
     # Public
+    cv2.namedWindow("Game", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Game", 1280, 720) 
     # ----------------------------
     def run(self):
         print("Game started. Keys: [q]=quit | [m]=toggle masks")
@@ -142,10 +205,6 @@ class Game:
     # PASSWORD PHASE
     # ----------------------------
     def _unlock_password(self) -> bool:
-        """
-        Runs the password sequence before starting the game.
-        Returns False if user quits (q) / camera fails.
-        """
         self.password.reset()
         self.voice.say("Show rock rock to confirm password")
 
@@ -166,18 +225,14 @@ class Game:
                 self.voice.say("Confirmed")
             elif self.password.last_event == "wrong":
                 self.voice.say("PASSWORD WRONG")
-
                 t0 = time.time()
                 while time.time() - t0 < 0.9:
                     if self._ui_tick(overlay_text=self.password.status_text()) is False:
                         return False
-                    
             elif self.password.last_event == "unlocked":
                 self.voice.say("Password accepted")
 
-
             if ok:
-                self.voice.say("Password accepted")
                 t0 = time.time()
                 while time.time() - t0 < 0.7:
                     if self._ui_tick(overlay_text="PASSWORD OK") is False:
@@ -189,8 +244,15 @@ class Game:
     # ----------------------------
     def _read_and_render(self, overlay_text=None):
         ret, frame = self.cap.read()
-        if not ret:
+        if not ret or frame is None:
             return None, None, None
+
+        # ✅ Apply undistort BEFORE tracker (if enabled)
+        if self.undistorter is not None:
+            try:
+                frame = self.undistorter(frame)
+            except Exception as e:
+                print(f"[WARN] Undistort failed on frame: {e}")
 
         results = self.tracker.update(frame, return_masks=self._show_masks)
 
@@ -205,19 +267,21 @@ class Game:
 
         # Status line (top-left)
         if overlay_text:
-            cv2.putText(
-                frame, overlay_text, (20, self._hud_status_y),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2
-            )
+            cv2.putText(frame, overlay_text, (20, self._hud_status_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
         # Scoreboard (top centered)
         self._draw_scoreboard(frame, y=self._hud_score_y)
 
         # FPS bottom-left
-        cv2.putText(
-            frame, f"FPS: {self._fps:.1f}", (20, frame.shape[0] - 20),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2
-        )
+        cv2.putText(frame, f"FPS: {self._fps:.1f}", (20, frame.shape[0] - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+        try:
+            _, _, w, h = cv2.getWindowImageRect("Game")
+            frame = cv2.resize(frame, (w, h), interpolation=cv2.INTER_LINEAR)
+        except Exception:
+            pass
 
         cv2.imshow("Game", frame)
 
@@ -230,9 +294,7 @@ class Game:
         if key == ord("m"):
             self._toggle_masks(results)
 
-        # keep voice alive
         self.voice.tick()
-
         return frame, results, key
 
     def _ui_tick(self, overlay_text=None):
@@ -252,7 +314,7 @@ class Game:
 
         while True:
             frame, results, key = self._read_and_render(
-                overlay_text=f"Hide hands... {hidden_streak}/{self.hide_required_frames}"
+                overlay_text=f"Hide hands. {hidden_streak}/{self.hide_required_frames}"
             )
             if frame is None or results is None:
                 return False
@@ -294,8 +356,15 @@ class Game:
     # ----------------------------
     def _snapshot_with_masks(self, overlay_text="SHOT"):
         ret, frame = self.cap.read()
-        if not ret:
+        if not ret or frame is None:
             return None, None
+
+        # ✅ Apply undistort here too (export matches tracker space)
+        if self.undistorter is not None:
+            try:
+                frame = self.undistorter(frame)
+            except Exception as e:
+                print(f"[WARN] Undistort failed on snapshot: {e}")
 
         results = self.tracker.update(frame, return_masks=True)
 
@@ -303,10 +372,8 @@ class Game:
         frame_det = self.viz.draw(frame_det, results)
 
         if overlay_text:
-            cv2.putText(
-                frame_det, overlay_text, (20, self._hud_status_y),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2
-            )
+            cv2.putText(frame_det, overlay_text, (20, self._hud_status_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
             self._draw_scoreboard(frame_det, y=self._hud_score_y)
 
         masks = results.get("_masks", {})
@@ -323,7 +390,6 @@ class Game:
 
         while True:
             if time.time() - start_time > timeout_s:
-                # Timeout -> count as NULL round
                 choices = {p1: last_g1, p2: last_g2}
                 frame_det, masks = self._snapshot_with_masks(overlay_text="TIMEOUT")
 
@@ -336,7 +402,7 @@ class Game:
                 return choices
 
             overlay = (
-                f"Stabilizing... {p1}:{streak1}/{self.stable_required_frames} "
+                f"Stabilizing. {p1}:{streak1}/{self.stable_required_frames} "
                 f"{p2}:{streak2}/{self.stable_required_frames}"
             )
 
@@ -351,7 +417,6 @@ class Game:
             d1, g1 = info1.get("detected", False), info1.get("gesture")
             d2, g2 = info2.get("detected", False), info2.get("gesture")
 
-            # stability logic
             if d1 and g1 is not None and g1 == last_g1:
                 streak1 += 1
             else:
@@ -389,46 +454,35 @@ class Game:
                     pass
 
     def _release(self):
+        # close voice/cam/windows
         try:
             self.voice.close()
         except Exception:
             pass
-
         try:
             self.cap.release()
         except Exception:
             pass
-
         cv2.destroyAllWindows()
 
-        out_dir = None
-
+        # export
         if self.save_results:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             out_dir = os.path.join(self.results_root, ts)
+            self._export_out_dir = out_dir
             try:
+                os.makedirs(out_dir, exist_ok=True)
                 self.info.export(out_dir)
-                print(f" Results saved to: {out_dir}")
+                print(f"Results saved to: {out_dir}")
             except Exception as e:
-                print(f"❌ Could not save results: {e}")
+                print(f"Could not save results: {e}")
                 out_dir = None
 
-        #  Launch dashboard at the end (if we exported)
-        if out_dir is not None:
-            try:
-                # Import aquí para evitar problemas de rutas / imports circulares
-                from src.dashboard import ResultsDashboard
-
-                dash = ResultsDashboard(
-                    out_dir=out_dir,
-                    host="127.0.0.1",
-                    port=5000,
-                    open_browser=True
-                )
-                print("Opening dashboard...")
-                dash.run(blocking=True)   # deja Flask corriendo hasta Ctrl+C
-            except Exception as e:
-                print(f"Could not open dashboard: {e}")
+            # launch dashboard (non-blocking)
+            if out_dir and _DASH_AVAILABLE:
+                try:
+                    ResultsDashboard(out_dir, open_browser=True).run(blocking=True)
+                except Exception as e:
+                    print(f"[WARN] Could not open dashboard: {e}")
 
         print("Done")
-

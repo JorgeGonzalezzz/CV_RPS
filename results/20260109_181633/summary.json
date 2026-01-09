@@ -1,0 +1,14 @@
+{
+  "players": [
+    "blue",
+    "red"
+  ],
+  "final_score": {
+    "blue": 0,
+    "red": 0,
+    "draws": 0,
+    "nulls": 0
+  },
+  "num_rounds": 0,
+  "rounds": []
+}
