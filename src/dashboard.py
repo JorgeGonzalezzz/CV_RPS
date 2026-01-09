@@ -101,7 +101,11 @@ class ResultsDashboard:
             filename = os.path.basename(full)
 
             # cache_timeout=0 -> do not cache images
-            return send_from_directory(directory, filename, cache_timeout=0)
+            try:
+                return send_from_directory(directory, filename, max_age=0)
+            except Exception:
+                return send_from_directory(directory, filename, cache_timeout=0)
+
 
     def run(self, blocking: bool = True):
         # IMPORTANT: open_host = 127.0.0.1 for local PC
