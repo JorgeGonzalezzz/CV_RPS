@@ -86,7 +86,7 @@ def get_hsv_color_ranges(image: np.array):
 
         if cv2.getWindowProperty('image', cv2.WND_PROP_VISIBLE) < 1:
             break
-        # get current positions of all trackbars
+        # Get current positions of all trackbars
         hMin = cv2.getTrackbarPos('HMin','image')
         sMin = cv2.getTrackbarPos('SMin','image')
         vMin = cv2.getTrackbarPos('VMin','image')

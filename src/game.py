@@ -9,7 +9,7 @@ from src.voice import Voice
 from src.game_info import GameInformation
 from src.password_lock import PasswordLock, PasswordConfig
 
-# Dashboard opcional (para que no reviente si el dashboard falla/importa mal)
+
 try:
     from src.dashboard import ResultsDashboard
     _DASH_AVAILABLE = True
@@ -27,7 +27,7 @@ class Game:
         visualizer_cls,
 
         # Camera
-        camera_source: Optional[Union[int, str]] = None,  # ✅ int (0) o URL
+        camera_source: Optional[Union[int, str]] = None, 
         camera_index: int = 0,
         use_dshow: bool = True,
 
@@ -46,10 +46,10 @@ class Game:
         # Password
         password_enabled: bool = True,
 
-        # ✅ NEW: Undistort (calibration)
-        calibration_npz: Optional[str] = None,   # e.g. "calibration_phone.npz"
-        undistort_alpha: float = 0.0,            # 0.0 recorta más, 1.0 conserva más FOV
-        undistort_crop: bool = False,            # recomiendo False para no cambiar tamaño
+        # Undistort (calibration)
+        calibration_npz: Optional[str] = None,
+        undistort_alpha: float = 0.0,   
+        undistort_crop: bool = False,    
     ):
         self.config = config
         self.colors = list(config.get("colors", {}).keys())
@@ -59,9 +59,9 @@ class Game:
         self.tracker = tracker_cls(config)
         self.viz = visualizer_cls()
 
-        # ============================
-        # ✅ VideoCapture: local o URL
-        # ============================
+        # ----------------------------
+        # VideoCapture: Local o URL
+        # ----------------------------
         if camera_source is None:
             camera_source = camera_index
 
@@ -69,7 +69,6 @@ class Game:
             api = cv2.CAP_DSHOW if use_dshow else 0
             self.cap = cv2.VideoCapture(camera_source, api)
         else:
-            # URL (IP cam). CAP_FFMPEG suele ir mejor si está disponible
             self.cap = cv2.VideoCapture(camera_source, cv2.CAP_FFMPEG)
             if not self.cap.isOpened():
                 self.cap = cv2.VideoCapture(camera_source)
@@ -77,7 +76,6 @@ class Game:
         if not self.cap.isOpened():
             raise RuntimeError(f"Could not access the camera/stream: {camera_source}")
 
-        # Opcional: reduce latencia (depende backend)
         try:
             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         except Exception:
@@ -85,9 +83,9 @@ class Game:
 
         self.camera_source = camera_source
 
-        # ============================
-        # ✅ Undistort (optional)
-        # ============================
+        # ----------------------------
+        # Undistort
+        # ----------------------------
         self.undistorter = None
         if calibration_npz is not None:
             try:
@@ -128,7 +126,7 @@ class Game:
         self.results_root = results_root
         self._export_out_dir: Optional[str] = None
 
-        # PASSWORD CONFIG
+        # Password config
         self.password_enabled = password_enabled
         self.password_cfg = PasswordConfig(
             steps=[
@@ -145,7 +143,7 @@ class Game:
         self.password = PasswordLock(self.info.players, self.password_cfg)
 
     # ----------------------------
-    # HUD helpers
+    # HUD Helpers
     # ----------------------------
     def _put_text_centered(self, frame, text, y, scale=0.75, thickness=2):
         H, W = frame.shape[:2]
@@ -166,19 +164,17 @@ class Game:
 
     # ----------------------------
     # Public
+    # ----------------------------
     cv2.namedWindow("Game", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("Game", 1280, 720) 
-    # ----------------------------
     def run(self):
         print("Game started. Keys: [q]=quit | [m]=toggle masks")
         try:
-            # PASSWORD FIRST
             if self.password_enabled:
                 ok = self._unlock_password()
                 if not ok:
                     return
 
-            # GAME LOOP
             while True:
                 result = self.round()
                 if result is None:
@@ -202,7 +198,7 @@ class Game:
         return self._wait_stable_gestures(timeout_s=self.post_shoot_timeout_s)
 
     # ----------------------------
-    # PASSWORD PHASE
+    # Password Phase
     # ----------------------------
     def _unlock_password(self) -> bool:
         self.password.reset()
@@ -240,14 +236,13 @@ class Game:
                 return True
 
     # ----------------------------
-    # Internal: read + render
+    # Internal: Read + Render
     # ----------------------------
     def _read_and_render(self, overlay_text=None):
         ret, frame = self.cap.read()
         if not ret or frame is None:
             return None, None, None
 
-        # ✅ Apply undistort BEFORE tracker (if enabled)
         if self.undistorter is not None:
             try:
                 frame = self.undistorter(frame)
@@ -265,15 +260,15 @@ class Game:
 
         frame = self.viz.draw(frame, results)
 
-        # Status line (top-left)
+        # Status line
         if overlay_text:
             cv2.putText(frame, overlay_text, (20, self._hud_status_y),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
-        # Scoreboard (top centered)
+        # Scoreboard
         self._draw_scoreboard(frame, y=self._hud_score_y)
 
-        # FPS bottom-left
+        # FPS
         cv2.putText(frame, f"FPS: {self._fps:.1f}", (20, frame.shape[0] - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
@@ -285,7 +280,6 @@ class Game:
 
         cv2.imshow("Game", frame)
 
-        # Mask windows (optional)
         if self._show_masks and "_masks" in results:
             for cname, m in results["_masks"].items():
                 cv2.imshow(f"mask_{cname}", m)
@@ -306,7 +300,7 @@ class Game:
         return True
 
     # ----------------------------
-    # Phase 1: hide hands
+    # Phase 1: Hide Hands
     # ----------------------------
     def _wait_hands_hidden(self):
         hidden_streak = 0
@@ -331,7 +325,7 @@ class Game:
                 return True
 
     # ----------------------------
-    # Phase 2: countdown
+    # Phase 2: Countdown
     # ----------------------------
     def _countdown_rps(self):
         words = ["Rock", "Paper", "Scissors", "Shoot!"]
@@ -352,14 +346,13 @@ class Game:
         return True
 
     # ----------------------------
-    # Snapshot (frames + masks)
+    # Snapshot (Frames + Masks)
     # ----------------------------
     def _snapshot_with_masks(self, overlay_text="SHOT"):
         ret, frame = self.cap.read()
         if not ret or frame is None:
             return None, None
 
-        # ✅ Apply undistort here too (export matches tracker space)
         if self.undistorter is not None:
             try:
                 frame = self.undistorter(frame)
@@ -380,7 +373,7 @@ class Game:
         return frame_det, masks
 
     # ----------------------------
-    # Phase 3: stable gestures + SAVE ROUND
+    # Phase 3: Stable Gestures + SAVE ROUND
     # ----------------------------
     def _wait_stable_gestures(self, timeout_s=4.0):
         p1, p2 = self.info.players
@@ -454,7 +447,7 @@ class Game:
                     pass
 
     def _release(self):
-        # close voice/cam/windows
+        # Close windows
         try:
             self.voice.close()
         except Exception:
@@ -465,7 +458,7 @@ class Game:
             pass
         cv2.destroyAllWindows()
 
-        # export
+        # Export
         if self.save_results:
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             out_dir = os.path.join(self.results_root, ts)
@@ -478,7 +471,7 @@ class Game:
                 print(f"Could not save results: {e}")
                 out_dir = None
 
-            # launch dashboard (non-blocking)
+            # Dashboard
             if out_dir and _DASH_AVAILABLE:
                 try:
                     ResultsDashboard(out_dir, open_browser=True).run(blocking=True)

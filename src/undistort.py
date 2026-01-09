@@ -33,7 +33,6 @@ class Undistorter:
 
         und = cv2.remap(frame, self._map1, self._map2, interpolation=cv2.INTER_LINEAR)
 
-        # Recomiendo crop=False por defecto para no cambiar tamaño (HUD/export más simples)
         if self.crop and self._roi is not None:
             x, y, w, h = self._roi
             if w > 0 and h > 0:

@@ -4,7 +4,6 @@ import math
 from collections import deque, Counter
 
 
-
 class GestureSmoother:
     def __init__(self, n=10):
         self.buf = deque(maxlen=n)
@@ -291,7 +290,7 @@ class TrackerVisualizer:
 
         lost_labels = []
 
-        # PREDICTIONS 
+        # Predictions 
         for color_name, info in results.items():
             if color_name == "_masks":
                 continue
@@ -317,7 +316,7 @@ class TrackerVisualizer:
             else:
                 lost_labels.append(f"{color_name.upper()} HIDDEN")
 
-        # LOST 
+        # Lost 
         x_margin = 20
         y0 = 30
         dy = 30
@@ -325,7 +324,7 @@ class TrackerVisualizer:
         for i, text in enumerate(lost_labels):
             y = y0 + i * dy
 
-            # calcular ancho del texto para alinear a la derecha
+            # Text wight for alignment
             (tw, th), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
             x = max(0, W - x_margin - tw)
 

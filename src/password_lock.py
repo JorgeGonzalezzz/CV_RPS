@@ -7,19 +7,19 @@ Pair = Tuple[Gesture, Gesture]
 
 @dataclass
 class PasswordConfig:
-    # sequence of expected pairs, in order
+    # Sequence of expected pairs, in order
     steps: List[Tuple[str, str]] = field(default_factory=list)
 
-    # confirm gesture (also used to ARM/start the lock)
+    # Confirm gesture (also used to ARM/start the lock)
     confirm_pair: Tuple[str, str] = ("ROCK", "ROCK")
 
-    # stabilization
-    stable_required_frames: int = 14          # frames needed to accept a selection/confirm
-    settle_frames_after_step: int = 30       # cooldown frames after transitions
-    timeout_s: float = 12.0                   # (optional, if you want to enforce timeout externally)
+    # Stabilization
+    stable_required_frames: int = 14          
+    settle_frames_after_step: int = 30      
+    timeout_s: float = 12.0                  
 
     # UX
-    wrong_flash_frames: int = 45              # how long "PASSWORD WRONG" stays on screen
+    wrong_flash_frames: int = 45              
 
 
 class PasswordLock:
@@ -46,7 +46,8 @@ class PasswordLock:
         self.reset()
 
     def reset(self):
-        self.state = "ARM"          # ARM -> SELECT -> CONFIRM -> DONE
+        
+        self.state = "ARM"  # ARM -> SELECT -> CONFIRM -> DONE          
         self.step_idx = 0
         self.selected_step: Optional[Tuple[str, str]] = None
 
@@ -108,11 +109,11 @@ class PasswordLock:
         """
         self.last_event = None
 
-        # decrement wrong flash
+        # Decrement wrong flash
         if self._flash_wrong > 0:
             self._flash_wrong -= 1
 
-        # cooldown between transitions (keeps it stable / prevents accidental double-triggers)
+        # Cooldown between transitions (keeps it stable / prevents accidental double-triggers)
         if self._cooldown > 0:
             self._cooldown -= 1
             self.last_pair = self._current_pair(results)
@@ -184,7 +185,7 @@ class PasswordLock:
                     return False
 
                 if chosen == expected:
-                    # ✅ step confirmed correct
+                    # step confirmed correct
                     self.selected_step = None
                     self.step_idx += 1
                     self.last_event = "confirmed"
@@ -198,7 +199,7 @@ class PasswordLock:
                     self.state = "SELECT"
                     return False
 
-                # ❌ wrong but confirmed -> reset to start
+                # wrong but confirmed -> reset to start
                 self._wrong_and_reset(chosen, expected)
                 return False
 
@@ -210,7 +211,6 @@ class PasswordLock:
     # UI text (clean)
     # -------------------------
     def status_text(self) -> str:
-        # flash wrong message on top
         if self._flash_wrong > 0:
             return "PASSWORD WRONG"
 
@@ -222,7 +222,6 @@ class PasswordLock:
             return f"LOCK | SHOW {a}+{b} TO START ({self._streak}/{self.cfg.stable_required_frames})"
 
         if self.state == "SELECT":
-            # 🔒 expected is NOT shown (secret password)
             return (
                 f"LOCK | STEP {step_num}/{total} | "
                 f"SELECT GESTURE ({self._streak}/{self.cfg.stable_required_frames})"

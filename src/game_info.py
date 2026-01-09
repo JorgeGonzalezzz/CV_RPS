@@ -98,7 +98,6 @@ class GameInformation:
         if img is None:
             return False
         try:
-            # masks are often 1-channel, frame is 3-channel -> both ok for imwrite
             return cv2.imwrite(path, img)
         except Exception:
             return False

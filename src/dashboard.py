@@ -18,7 +18,7 @@ class ResultsDashboard:
         self.port = int(port)
         self.open_browser = open_browser
 
-        # Project root (.. from src/)
+        # Project root
         BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         WEB_DIR = os.path.join(BASE_DIR, "web")
 
@@ -32,7 +32,7 @@ class ResultsDashboard:
         # Disable Flask static cache
         self.app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-        # Disable browser cache for EVERYTHING
+        # Disable browser cache
         @self.app.after_request
         def add_no_cache_headers(resp):
             resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -65,13 +65,13 @@ class ResultsDashboard:
     def _register_routes(self):
         @self.app.get("/")
         def index():
-            # Always load fresh summary (no caching)
+            # Summary
             s = self._load_summary()
             players = s.get("players", [])
             final_score = s.get("final_score", {})
             final_winner = self._compute_final_winner(players, final_score)
 
-            # Make response explicitly no-cache
+            # Response no-cache
             html = render_template(
                 "dashboard.html",
                 out_dir=self.out_dir,
@@ -104,7 +104,7 @@ class ResultsDashboard:
             return send_from_directory(directory, filename, cache_timeout=0)
 
     def run(self, blocking: bool = True):
-        # IMPORTANT: even if host is 0.0.0.0, browser must open 127.0.0.1 for local PC
+        # IMPORTANT: open_host = 127.0.0.1 for local PC
         open_host = "127.0.0.1"
         cache_bust = int(time.time() * 1000)
         url = f"http://{open_host}:{self.port}/?t={cache_bust}"
