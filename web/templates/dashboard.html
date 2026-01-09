@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RPS Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+
+
+  <!-- CSS externo-->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+  <div class="container">
+
+    <div class="header">
+      <div>
+        <div class="title">RPS Results Dashboard</div>
+        <div class="subtitle">
+          Players: <b>{{ players[0] }}</b> vs <b>{{ players[1] }}</b>
+        </div>
+      </div>
+
+      <div class="pathbox">
+        <div><b>Export folder</b></div>
+        <div class="mono">{{ out_dir }}</div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab-btn active" data-tab="score">Winner &amp; Score</div>
+      <div class="tab-btn" data-tab="frames">Frames</div>
+      <div class="tab-btn" data-tab="masks">Masks</div>
+    </div>
+
+    <!-- SCORE -->
+    <div class="panel active" id="panel-score">
+      <div class="card">
+        <div class="row">
+          <div>
+            <div class="muted">Final winner</div>
+            <div class="big">{{ final_winner }}</div>
+          </div>
+          <span class="pill">Rounds: {{ num_rounds }}</span>
+        </div>
+
+        <div class="kpi">
+          <div class="box">
+            <div class="k">{{ players[0] }} wins</div>
+            <div class="v">{{ final_score.get(players[0], 0) }}</div>
+          </div>
+
+          <div class="box">
+            <div class="k">{{ players[1] }} wins</div>
+            <div class="v">{{ final_score.get(players[1], 0) }}</div>
+          </div>
+
+          <div class="box">
+            <div class="k">Draws</div>
+            <div class="v">{{ final_score.get("draws", 0) }}</div>
+          </div>
+
+          <div class="box">
+            <div class="k">Null rounds</div>
+            <div class="v">{{ final_score.get("nulls", 0) }}</div>
+          </div>
+        </div>
+
+        <div class="hint">
+          Tip: go to <b>Frames</b> / <b>Masks</b> and use <b>← / →</b> (or <b>A / D</b>). <b>Home</b> / <b>End</b> jump.
+        </div>
+      </div>
+    </div>
+
+    <!-- FRAMES -->
+    <div class="panel" id="panel-frames">
+      <div class="nav">
+        <div class="nav-left">
+          <b>Frames</b>
+          <span class="pill" id="framesRoundPill">Round 1 / {{ num_rounds }}</span>
+          <span class="pill" id="framesChoicePill"></span>
+        </div>
+        <div class="nav-right">
+          <button class="btn" id="prevFrameBtn">← Prev</button>
+          <button class="btn" id="nextFrameBtn">Next →</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="muted" id="framesOutcome"></div>
+
+        <div class="viewer">
+          <a class="link" id="framesLink" href="#" target="_blank" rel="noopener">
+            <img id="framesImg" src="" alt="frame_detection" />
+          </a>
+          <div class="hint">Keyboard: ← / → or A / D</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MASKS -->
+    <div class="panel" id="panel-masks">
+      <div class="nav">
+        <div class="nav-left">
+          <b>Masks</b>
+          <span class="pill" id="masksRoundPill">Round 1 / {{ num_rounds }}</span>
+          <span class="pill" id="masksChoicePill"></span>
+        </div>
+        <div class="nav-right">
+          <button class="btn" id="prevMaskBtn">← Prev</button>
+          <button class="btn" id="nextMaskBtn">Next →</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="muted" id="masksOutcome"></div>
+
+        <div class="two-col">
+          <div class="mask-card">
+            <div class="hint">mask_all</div>
+            <a class="link" id="maskAllLink" href="#" target="_blank" rel="noopener">
+              <img id="maskAllImg" src="" alt="mask_all" />
+            </a>
+          </div>
+
+          <div class="mask-card">
+            <div class="hint">mask_red</div>
+            <a class="link" id="maskRedLink" href="#" target="_blank" rel="noopener">
+              <img id="maskRedImg" src="" alt="mask_red" />
+            </a>
+          </div>
+
+          <div class="mask-card">
+            <div class="hint">mask_blue</div>
+            <a class="link" id="maskBlueLink" href="#" target="_blank" rel="noopener">
+              <img id="maskBlueImg" src="" alt="mask_blue" />
+            </a>
+          </div>
+        </div>
+
+        <div class="hint">Keyboard: ← / → or A / D</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Datos + lógica  -->
+  <script>
+    const PLAYERS = {{ players | tojson | safe }};
+    const ROUNDS  = {{ rounds  | tojson | safe }};
+
+    const NUM = ROUNDS.length;
+
+    // Tabs
+    const tabButtons = document.querySelectorAll(".tab-btn");
+    const panels = {
+      score: document.getElementById("panel-score"),
+      frames: document.getElementById("panel-frames"),
+      masks: document.getElementById("panel-masks"),
+    };
+    let activeTab = "score";
+
+    function activate(tab) {
+      activeTab = tab;
+      tabButtons.forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+      Object.entries(panels).forEach(([k, el]) => el.classList.toggle("active", k === tab));
+      if (tab === "frames") renderFrames();
+      if (tab === "masks") renderMasks();
+    }
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener("click", () => activate(btn.dataset.tab));
+    });
+
+    // Shared index for rounds
+    let idx = 0;
+    function clampIndex() {
+      if (NUM <= 0) idx = 0;
+      if (idx < 0) idx = 0;
+      if (idx > NUM - 1) idx = NUM - 1;
+    }
+    function roundLabel() { return `Round ${idx + 1} / ${NUM}`; }
+
+    function choiceLabel(r) {
+      const p1 = PLAYERS[0], p2 = PLAYERS[1];
+      const c1 = (r.choices && r.choices[p1]) ? r.choices[p1] : "None";
+      const c2 = (r.choices && r.choices[p2]) ? r.choices[p2] : "None";
+      return `${p1}: ${c1}  |  ${p2}: ${c2}`;
+    }
+
+    function outcomeLabel(r) {
+      const p1 = PLAYERS[0], p2 = PLAYERS[1];
+      const o1 = (r.outcome && r.outcome[p1]) ? r.outcome[p1] : "-";
+      const o2 = (r.outcome && r.outcome[p2]) ? r.outcome[p2] : "-";
+      return `Outcome: ${p1}=${o1}, ${p2}=${o2}`;
+    }
+
+    function fileOrEmpty(r, key) {
+      if (!r.files) return "";
+      return r.files[key] || "";
+    }
+
+    // Frames elements
+    const framesRoundPill = document.getElementById("framesRoundPill");
+    const framesChoicePill = document.getElementById("framesChoicePill");
+    const framesOutcome = document.getElementById("framesOutcome");
+    const framesImg = document.getElementById("framesImg");
+    const framesLink = document.getElementById("framesLink");
+
+    function renderFrames() {
+      if (NUM === 0) return;
+      clampIndex();
+      const r = ROUNDS[idx];
+
+      framesRoundPill.textContent = roundLabel();
+      framesChoicePill.textContent = choiceLabel(r);
+      framesOutcome.textContent = outcomeLabel(r);
+
+      const fp = fileOrEmpty(r, "frame_detection");
+      if (fp) {
+        framesImg.src = `/files/${fp}`;
+        framesLink.href = `/files/${fp}`;
+        framesImg.style.opacity = 1.0;
+      } else {
+        framesImg.src = "";
+        framesLink.href = "#";
+        framesImg.style.opacity = 0.25;
+      }
+    }
+
+    // Masks elements
+    const masksRoundPill = document.getElementById("masksRoundPill");
+    const masksChoicePill = document.getElementById("masksChoicePill");
+    const masksOutcome = document.getElementById("masksOutcome");
+
+    const maskAllImg = document.getElementById("maskAllImg");
+    const maskRedImg = document.getElementById("maskRedImg");
+    const maskBlueImg = document.getElementById("maskBlueImg");
+
+    const maskAllLink = document.getElementById("maskAllLink");
+    const maskRedLink = document.getElementById("maskRedLink");
+    const maskBlueLink = document.getElementById("maskBlueLink");
+
+    function setImg(imgEl, linkEl, path) {
+      if (path) {
+        imgEl.src = `/files/${path}`;
+        linkEl.href = `/files/${path}`;
+        imgEl.style.opacity = 1.0;
+      } else {
+        imgEl.src = "";
+        linkEl.href = "#";
+        imgEl.style.opacity = 0.25;
+      }
+    }
+
+    function renderMasks() {
+      if (NUM === 0) return;
+      clampIndex();
+      const r = ROUNDS[idx];
+
+      masksRoundPill.textContent = roundLabel();
+      masksChoicePill.textContent = choiceLabel(r);
+      masksOutcome.textContent = outcomeLabel(r);
+
+      setImg(maskAllImg, maskAllLink, fileOrEmpty(r, "mask_all"));
+      setImg(maskRedImg, maskRedLink, fileOrEmpty(r, "mask_red"));
+      setImg(maskBlueImg, maskBlueLink, fileOrEmpty(r, "mask_blue"));
+    }
+
+    function prev() {
+      idx -= 1;
+      clampIndex();
+      if (activeTab === "frames") renderFrames();
+      if (activeTab === "masks") renderMasks();
+    }
+    function next() {
+      idx += 1;
+      clampIndex();
+      if (activeTab === "frames") renderFrames();
+      if (activeTab === "masks") renderMasks();
+    }
+
+    document.getElementById("prevFrameBtn").addEventListener("click", prev);
+    document.getElementById("nextFrameBtn").addEventListener("click", next);
+    document.getElementById("prevMaskBtn").addEventListener("click", prev);
+    document.getElementById("nextMaskBtn").addEventListener("click", next);
+
+    // Keyboard navigation: only active on Frames/Masks tabs
+    document.addEventListener("keydown", (e) => {
+      if (activeTab !== "frames" && activeTab !== "masks") return;
+
+      if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+        e.preventDefault(); prev();
+      } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+        e.preventDefault(); next();
+      } else if (e.key === "Home") {
+        idx = 0; clampIndex();
+        (activeTab === "frames") ? renderFrames() : renderMasks();
+      } else if (e.key === "End") {
+        idx = NUM - 1; clampIndex();
+        (activeTab === "frames") ? renderFrames() : renderMasks();
+      }
+    });
+
+    // Initial safe render
+    renderFrames();
+    renderMasks();
+  </script>
+</body>
+</html>
