@@ -1,6 +1,19 @@
+## 🎮 Rock–Paper–Scissors Vision Game
+
+Este proyecto implementa un **juego de Piedra, Papel o Tijeras en tiempo real** basado en **visión por ordenador**, donde dos jugadores interactúan frente a una cámara utilizando gestos de la mano.
+
+El sistema detecta y sigue las manos de cada jugador mediante segmentación por color, reconoce los gestos (ROCK / PAPER / SCISSORS), gestiona automáticamente las rondas y el marcador, y guarda los resultados de cada partida. Al finalizar el juego, se genera un **dashboard web interactivo** que permite analizar visualmente las rondas, los frames de detección y las máscaras utilizadas durante el tracking.
+
+El proyecto está diseñado con una clara separación entre:
+- **Calibración** (cámara y colores, mediante notebooks)
+- **Configuración persistente** (archivos en `configs/`)
+- **Ejecución del juego** (código en `src/`)
+- **Visualización de resultados** (dashboard web)
+
+Esto lo hace modular, reproducible y fácil de adaptar a distintas cámaras, entornos de iluminación o configuraciones de juego.
 
 
-
+---
 
 ## 📁 src/
 
@@ -132,12 +145,8 @@ Resultados intermedios de la calibración de cámara:
 
 ---
 
-### 📁 `hands/test_hands_3/`
-Imágenes de prueba para calibración y validación del tracking de color:
-- Carpeta `blue/`: ejemplos de la mano del jugador azul
-- Carpeta `red/`: ejemplos de la mano del jugador rojo
-
-Se utilizan principalmente en `calibrate_colors.ipynb`.
+### 📁 `hands/test_hands/`
+Imágenes de prueba para calibración y validación del tracking de color
 
 ---
 
@@ -174,20 +183,6 @@ Define, para cada jugador (por ejemplo `blue` y `red`):
 - Valores `lower` y `upper` en espacio HSV
 
 Estos parámetros suelen obtenerse y ajustarse en `calibrate_colors.ipynb`, y luego se guardan aquí para su uso directo por el tracker.
-
----
-
-### `test_set_2.json`
-Variación alternativa de configuración HSV:
-- Útil para probar diferentes condiciones de iluminación
-- Permite comparar estabilidad del tracking sin modificar código
-
----
-
-### `test_set_3.json`
-Otra variante de configuración de colores:
-- Ajustes más estrictos o más permisivos según el entorno
-- Facilita el cambio rápido de presets de calibración
 
 ---
 
